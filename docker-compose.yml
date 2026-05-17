@@ -1,0 +1,57 @@
+# Postgres + API + Worker (+ ComfyUI в R2)
+services:
+  # PostgreSQL — база данных для хранения задач (jobs) и результатов
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      - ./migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks: [internal]
+
+  # API — FastAPI приложение, принимает запросы от пользователей
+  api:
+    build: ./api
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      COMFY_OUTPUT_DIR: /comfy_output
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    volumes:
+      # output ComfyUI монтируем read-only — API только отдаёт файлы
+      - ${COMFY_OUTPUT_HOST}:/comfy_output:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks: [internal]
+
+  # Worker — фоновый обработчик, забирает задачи из БД и отправляет в ComfyUI
+  worker:
+    build: ./worker
+    restart: unless-stopped
+    env_file: .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks: [internal]
+
+volumes:
+  pg_data:
+
+networks:
+  internal:
+    driver: bridge
