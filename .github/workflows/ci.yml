@@ -1,5 +1,8 @@
 name: CI
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 on:
   push:
     branches: [main, "release-*"]
@@ -49,6 +52,14 @@ jobs:
   build:
     needs: [lint, test]
     runs-on: ubuntu-latest
+    env:
+      POSTGRES_USER: test
+      POSTGRES_PASSWORD: test
+      POSTGRES_DB: test
+      COMFY_OUTPUT_HOST: /tmp/comfy_output_mock
+      DATABASE_URL: postgresql+psycopg://test:test@postgres:5432/test
+      COMFY_URL: http://host.docker.internal:8188
+      API_KEY: dev-ci-key 
     steps:
       - uses: actions/checkout@v4
       - run: docker compose build
