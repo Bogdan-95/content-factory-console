@@ -27,3 +27,8 @@ storage/
 
 # Docker
 *.pid.env
+
+
+show_project_tree.sh
+# Сгенерированные smoke-тестом изображения
+smoke_*.png
