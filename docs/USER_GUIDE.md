@@ -1,20 +1,18 @@
 # 📘 Руководство пользователя Content Factory Console
 
-[![Release v1.0.0](https://img.shields.io/badge/release-v1.0.0-blue)](../CHANGELOG.md)
+[![Release v2.0.0](https://img.shields.io/badge/release-v2.0.0-blue)](../CHANGELOG.md)
 
 ---
 
 **Content Factory Console** — production‑ready API‑сервис для генерации изображений через Stable Diffusion XL + ComfyUI.  
-Быстрый старт: одна команда `docker compose up` — и вы получаете очередь задач, REST API и асинхронного worker’а.
+Версия 2.0.0: всё работает в Docker, включая ComfyUI с GPU‑ускорением. Модели скачиваются автоматически. Достаточно одного `docker compose up`.
 
-Если вы разработчик и хотите изменить внутреннюю логику — читайте [`docs/DEVELOPER.md`](./DEVELOPER.md).  
-Если нужно обновить проект с версии 1 до версии 2 — смотрите [`docs/MIGRATION_R1_TO_R2.md`](./MIGRATION_R1_TO_R2.md).
+Разработчикам — см. [`docs/DEVELOPER.md`](./DEVELOPER.md).  
+Миграция с версии 1 — [`docs/MIGRATION_R1_TO_R2.md`](./MIGRATION_R1_TO_R2.md).
 
 ---
 
 ## 📋 Требования
-
-### Минимальные системные характеристики
 
 - **ОС:** Ubuntu 22.04+ / Windows 11 + WSL2 / macOS (на macOS GPU‑пасстр не работает в Docker — используйте нативную ComfyUI).
 - **Docker:** Engine 24+ с плагином `docker compose` (или Docker Desktop).
@@ -45,62 +43,49 @@ cp .env.example .env
 
 **Откройте .env в любом редакторе и задайте обязательные параметры:**
 
-```bash
-POSTGRES_PASSWORD=ваш_пароль_любой_длины
-COMFY_OUTPUT_HOST=/home/user/ComfyUI/output   # только для Release 1
-API_KEY=ваш_секретный_ключ                    # в dev можно оставить значение по умолчанию
-```
+- `POSTGRES_PASSWORD` – придумайте пароль для БД.
 
-### 3. Выбор режима работы (Release)
-#### Проект поддерживает два режима:
+- `API_KEY` – сгенерируйте ключ (например, openssl rand -hex 32). По умолчанию dev-local-key-change-me небезопасен.
 
-Релиз	Где ComfyUI	Переменная COMFY_URL
-**Release 1** (по умолчанию)	Запущен отдельно на хосте	http://host.docker.internal:8188
+- `ALLOWED_ORIGINS` – укажите адрес вашего фронтенда, если он есть.
 
-**Release 2** (в разработке)	В контейнере Docker	http://comfyui:8188
-Для выбора достаточно раскомментировать нужную строку в .env.
-Для R1 также потребуется указать реальный путь COMFY_OUTPUT_HOST.
+- Остальные параметры можно оставить как есть.
+
+
+**Release 2** 	В контейнере Docker	http://comfyui:8188
+Для выбора достаточно раскомментировать нужную строку в `.env`.
+Для `R1` также потребуется указать реальный путь `COMFY_OUTPUT_HOST`.
 
 ---
 # ⚡ Запуск
-### Release 1 (ComfyUI отдельно)
-#### Терминал 1 — запуск ComfyUI на хосте:
 
-```bash
-cd /path/to/ComfyUI
-python main.py --listen 0.0.0.0 --port 8188
-# убедитесь, что он отвечает:
-curl -sI http://localhost:8188/ | head -1
-# HTTP/1.1 200 OK
-```
-
-#### Терминал 2 — поднимаем пульт:
-
-```bash
-cd content-factory-console
-docker compose up --build
-Логи покажут последовательный запуск: PostgreSQL → API → Worker.
-После появления надписи Worker started, polling for jobs... сервис готов.
-```
----
 ### Release 2 (всё в Docker)
+
 ```bash
 cd content-factory-console
 docker compose up --build
 ```
 
-```text
-При первом запуске контейнер preflight автоматически скачает модель SDXL Base (~6.5 ГБ).
-Это может занять до 20 минут в зависимости от скорости интернета.
-Дождитесь сообщения Preflight completed и запуска worker’а.
-```
+### При первом запуске:
+
+1. Поднимется `Postgres`.
+
+2. Контейнер `preflight` скачает модель `SDXL Base (~6.5 ГБ)`. Это может занять 5–20 минут.
+
+Когда появится сообщение `✅ preflight: all models ready`, запустится ComfyUI.
+
+API станет доступно на `http://localhost:8000`.
+
+Следить за прогрессом можно в логах: `docker compose logs -f preflight`.
 
 ---
 
 ## 📡 Использование API
-Все примеры ниже предполагают, что сервис слушает **http://localhost:8000** и API‑ключ равен <u>dev-local-key-change-me</u> (значение по умолчанию в .env).
+
+Все запросы (кроме `/health`) требуют `HTTP‑заголовок X-API-Key` с вашим ключом.
 
 #### Интерактивная документация доступна через Swagger UI:
+
 👉 http://localhost:8000/docs
 
 #### 1. Проверка работоспособности
@@ -147,48 +132,60 @@ curl -X POST http://localhost:8000/generate \
 | `seed`     | int    |   ≥ −1   |     `-1`      | Зерно случайности; −1 = случайное                       |
 ```
 
+---
+
 ### 3. Проверка статуса задания
 
 ```bash
-curl -H "X-API-Key: dev-local-key-change-me" http://localhost:8000/jobs/7
+curl -H "X-API-Key: ваш_ключ" http://localhost:8000/jobs/1
 
 ```
 
 #### Возможные статусы:
 
 >[!NOTE]
-queued — ожидает обработки.
-processing — worker взял задание и отправляет на ComfyUI.
-done — генерация успешно завершена.
-failed — ошибка (см. поле error в ответе).
+- `queued` — ожидает обработки.
+- `processing` — worker взял задание и отправляет на ComfyUI.
+- `done` — генерация успешно завершена.
+- `failed` — ошибка (см. поле error в ответе).
 
-Пример:
-
-```json
-{
-  "id": 7,
-  "status": "processing",
-  "created_at": "2026-05-10T10:30:00Z",
-  "started_at": "2026-05-10T10:30:02Z",
-  "finished_at": null,
-  "error": null
-}
-
-```
 
 ### 4. Получение имени файла и скачивание
 Когда статус станет done, запросите ссылку на результат:
 
 ```bash
-curl -H "X-API-Key: dev-local-key-change-me" http://localhost:8000/jobs/7/result
-# {"job_id":7,"filename":"ComfyUI_00007_.png","url":"/files/ComfyUI_00007_.png"}
+# получить имя файла
+curl -H "X-API-Key: ваш_ключ" http://localhost:8000/jobs/1/result
+# {"job_id":1,"filename":"ComfyUI_00001_.png","url":"/files/ComfyUI_00001_.png"}
 ```
 
 #### Скачайте изображение:
 
 ```bash
-curl -O http://localhost:8000/files/ComfyUI_00007_.png
+curl -O http://localhost:8000/files/ComfyUI_00001_.png
 ```
+
+### 5. Быстрый smoke‑тест
+В репозитории есть готовый скрипт:
+
+```bash
+./scripts/smoke.sh
+```
+
+Он автоматически выполнит всю цепочку и сохранит сгенерированное изображение.
+
+### 🔐 Безопасность
+Все эндпоинты (кроме `/health`) закрыты API‑ключом.
+
+Включён rate‑limit: после превышения `RATE_LIMIT_PER_MIN` запросов в минуту возвращается `429`.
+
+CORS разрешает только указанные источники.
+
+Контейнеры работают от непривилегированных пользователей.
+
+Никогда не используйте ключ по умолчанию в production. Сгенерируйте новый при первом деплое и храните в защищённом месте.
+
+---
 
 #### 🧪 Примеры использования
 **Простая генерация (минимальный запрос)**
@@ -230,7 +227,7 @@ import time, requests
 BASE = "http://localhost:8000"
 HEADERS = {
     "Content-Type": "application/json",
-    "X-API-Key": "dev-local-key-change-me"
+    "X-API-Key": "ваш_ключ"
 }
 
 # Создаём задание
@@ -263,16 +260,19 @@ else:
 ```
 
 >[!WARNING]
+
 ```markdown
 ❗ Частые проблемы и их решение
-- **`api` не стартует** — проверь пароль Postgres в `.env`.
+- **`api` не стартует** — проверь пароль Postgres в `.env` и доступность БД.
+- **`403 invalid API key`** – не передан заголовок `X-API-Key` или ключ неверный.
 - **`connection refused` к ComfyUI** — запущен ли он? Listen ли на `0.0.0.0`?
-- **`429 Too Many Requests`** — включён rate‑limit. Увеличь `RATE_LIMIT_PER_MIN`.
+- **`429 Too Many Requests`** — включён rate‑limit. Увеличь `RATE_LIMIT_PER_MIN` в .`env`.
 - **Долго генерирует** — нормально для SDXL на слабом GPU. Уменьши `steps` до 15–20.
 - **GPU не виден (R2)** — проверь `nvidia-container-toolkit` и `nvidia-smi` через `--gpus all`.
 ```
 
---- 
+---
+
 ## 🛑 Остановка и очистка
 
 ```bash
@@ -282,12 +282,11 @@ docker compose down
 # Остановить и удалить все данные (volumes)
 docker compose down -v
 
-# Для Release 1 также остановите ComfyUI (Ctrl+C)
 ```
 
 ## 📚 Дополнительная документация
-Swagger UI: http://localhost:8000/docs — полная интерактивная документация всех эндпоинтов.
+Swagger UI: `http://localhost:8000/docs`
 
-README: ../README.md — архитектура, разработка, CI.
+ComfyUI (GUI): `http://localhost:8188` (если нужен прямой доступ к интерфейсу)
 
-Для разработчиков: DEVELOPER.md — как добавить новый параметр, локальный запуск, продакшен‑чеклист.
+README: `README.md`

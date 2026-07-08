@@ -1,15 +1,13 @@
-# GET /files/{filename}
-
 from pathlib import Path
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import FileResponse
 
 from ..settings import settings
+from ..security import require_api_key
 
-router = APIRouter(tags=["files"])
+router = APIRouter(tags=["files"], dependencies=[Depends(require_api_key)])
 
 # _ROOT — абсолютный путь к папке с результатами ComfyUI внутри контейнера.
-# resolve() — превращает в абсолютный путь без ".." и симлинков.
 _ROOT = Path(settings.comfy_output_dir).resolve()
 
 

@@ -15,5 +15,8 @@ import pytest
     ],
 )
 def test_files_reject_traversal(client, bad):
-    r = client.get(f"/files/{bad}")
+    r = client.get(
+        f"/files/{bad}",
+        headers={"X-API-Key": "dev-local-key-change-me"},
+    )
     assert r.status_code in (400, 404)

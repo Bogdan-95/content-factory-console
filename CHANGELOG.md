@@ -6,34 +6,22 @@
 
 ---
 
-## [Unreleased]
-
-### Planned
-
-- Watchdog для зависших `processing` (возврат в `queued` после N минут).
-- Идемпотентность `/generate` через `idempotency_key` + unique‑индекс.
-- Prometheus metrics + Grafana dashboard.
-- Web UI на Next.js.
-- Поддержка нескольких workflow‑шаблонов (SD 1.5, SDXL, Flux).
-
----
-
-## [2.0.0] — Planned
+## [2.0.0] — 26-06-2026
 
 ### Added
 
-- Сервис `comfyui` в `docker-compose.yml` с GPU passthrough через `nvidia-container-toolkit`.
-- `scripts/preflight.py` — авто‑скачивание моделей с SHA256‑проверкой целостности.
-- `scripts/models_map.json` — декларативный конфиг моделей (checkpoints / vae / loras).
-- `scripts/Dockerfile.preflight` — образ для одноразового сервиса‑скачивателя.
-- Named volume `comfy_models` — модели переживают `docker compose down`.
-- Named volume `comfy_output` — PNG‑результаты, общий между `comfyui` и `api`.
+- **ComfyUI в Docker** – сервис `comfyui` с GPU-пробросом (`nvidia-container-toolkit`).
+- **Preflight** – авто‑скачивание моделей перед запуском (`scripts/preflight.py` + `models_map.json`).
+- **Alembic** – управление миграциями БД, автоматически применяются при старте API.
+- **Продакшн‑готовность** – gunicorn + UvicornWorker, обязательный API‑ключ на всех эндпоинтах, rate‑limit.
+- **Новая документация** – `DEVELOPER.md`, `USER_GUIDE.md`, `MIGRATION_R1_TO_R2.md`.
 
 ### Changed
 
 - `COMFY_URL` теперь по умолчанию `http://comfyui:8188` (внутри compose сети).
 - Удалён `COMFY_OUTPUT_HOST` — output живёт в named volume.
 - `docker-compose.yml` полностью переписан под новую архитектуру.
+- Миграции БД переведены на Alembic. 
 - `worker.py::_apply_params` — стабильный seed (если `seed=-1`, генерируется случайный, но логируется).
 
 ### Removed
@@ -43,7 +31,7 @@
 
 ### Migration
 
-- См. подробную инструкцию: docs/MIGRATION_R1_TO_R2.md
+- См. подробную инструкцию: `docs/MIGRATION_R1_TO_R2.md`
 - TL;DR пути: `pg_dump` → archive PNG → `down` → `checkout main` → edit `.env` → `up --build` → restore PNG → smoke test.
 
 ---

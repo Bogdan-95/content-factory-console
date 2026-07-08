@@ -28,7 +28,11 @@ storage/
 # Docker
 *.pid.env
 
+comfyui/models/
+
+/home/bogdan/projects/content-factory-console/comfyui/models/checkpoints
 
 show_project_tree.sh
 # Сгенерированные smoke-тестом изображения
 smoke_*.png
+/home/bogdan/projects/content-factory-console/show_project_tree.sh

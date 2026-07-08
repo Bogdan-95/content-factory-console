@@ -1,0 +1,7 @@
+FROM python:3.12-slim
+WORKDIR /app
+RUN pip install --no-cache-dir requests
+COPY preflight.py /app/preflight.py
+COPY models_map.json /app/models_map.json
+ENV MODELS_MAP=/app/models_map.json
+CMD ["python", "/app/preflight.py"]

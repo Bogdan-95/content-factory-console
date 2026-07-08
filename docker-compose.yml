@@ -1,6 +1,5 @@
-# Postgres + API + Worker (+ ComfyUI в R2)
+# docker-compose.yml - Release 2: ComfyUI в Docker, GPU
 services:
-  # PostgreSQL — база данных для хранения задач (jobs) и результатов
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped
@@ -10,7 +9,6 @@ services:
       POSTGRES_DB: ${POSTGRES_DB}
     volumes:
       - pg_data:/var/lib/postgresql/data
-      - ./migrations:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 5s
@@ -18,39 +16,72 @@ services:
       retries: 10
     networks: [internal]
 
-  # API — FastAPI приложение, принимает запросы от пользователей
+  # Preflight — скачивает модели ДО запуска ComfyUI
+  preflight:
+    build:
+      context: ./scripts
+      dockerfile: Dockerfile.preflight
+    environment:
+      - MODELS_MAP=/app/models_map.json
+    volumes:
+      - comfy_models:/opt/ComfyUI/models
+      - ./scripts/models_map.json:/app/models_map.json:ro
+    restart: "no"
+    networks: [internal]
+    # Не зависит от comfyui, выполняется первым
+
+  # ComfyUI — запускается только после успешного завершения preflight
+  comfyui:
+    build: ./comfyui
+    runtime: nvidia
+    restart: unless-stopped
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+    ports:
+      - "8188:8188"
+    volumes:
+      - comfy_models:/opt/ComfyUI/models
+      - comfy_output:/opt/ComfyUI/output
+    depends_on:
+      preflight:
+        condition: service_completed_successfully
+    networks: [internal]
+
   api:
-    build: ./api
+    build: 
+      context: .
+      dockerfile: ./api/Dockerfile
     restart: unless-stopped
     env_file: .env
     environment:
       COMFY_OUTPUT_DIR: /comfy_output
+      COMFY_URL: http://comfyui:8188
     depends_on:
       postgres:
         condition: service_healthy
     ports:
       - "8000:8000"
     volumes:
-      # output ComfyUI монтируем read-only — API только отдаёт файлы
-      - ${COMFY_OUTPUT_HOST}:/comfy_output:ro
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+      - comfy_output:/comfy_output:ro
     networks: [internal]
 
-  # Worker — фоновый обработчик, забирает задачи из БД и отправляет в ComfyUI
   worker:
     build: ./worker
     restart: unless-stopped
     env_file: .env
+    environment:
+      COMFY_URL: http://comfyui:8188
     depends_on:
       postgres:
         condition: service_healthy
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+      comfyui:
+        condition: service_started
     networks: [internal]
 
 volumes:
   pg_data:
+  comfy_models:
+  comfy_output:
 
 networks:
   internal:
