@@ -2,20 +2,18 @@
 
 Self-hosted сервис для постановки и обработки задач генерации изображений через ComfyUI.
 
-REST API принимает задания, PostgreSQL хранит очередь, а отдельный Worker отправляет workflow в ComfyUI и сохраняет результат выполнения.
+Проект реализует REST API, очередь заданий на PostgreSQL и отдельный Worker, который взаимодействует с ComfyUI и сохраняет результаты генерации.
 
-> Портфолио-проект. Для реального публичного развёртывания потребуются дополнительные operational- и security-проверки, описанные в разделе «Ограничения».
+## Основные возможности
 
-## Возможности
-
-- FastAPI REST API для создания задач и получения их статусов.
-- Очередь задач на PostgreSQL без Redis/Celery.
-- Захват заданий через `SELECT ... FOR UPDATE SKIP LOCKED`.
-- Отдельные API и Worker контейнеры.
-- Интеграция Worker с ComfyUI API.
-- Миграции PostgreSQL через Alembic.
-- Docker Compose для локального запуска.
-- Pytest, Ruff и GitHub Actions.
+- REST API на FastAPI для создания задач и проверки их статуса.
+- Очередь задач на PostgreSQL без Redis и Celery.
+- Конкурентное получение заданий через `SELECT ... FOR UPDATE SKIP LOCKED`.
+- Отдельный процесс Worker для обработки задач.
+- Интеграция с ComfyUI API.
+- Сохранение результатов генерации и статусов выполнения.
+- Миграции базы данных через Alembic.
+- Контейнеризация с Docker Compose.
 
 ## Архитектура
 
@@ -23,63 +21,60 @@ REST API принимает задания, PostgreSQL хранит очеред
 Client
   |
   v
-FastAPI API -----> PostgreSQL jobs
-                       |
-                       v
-                 Worker (SKIP LOCKED)
-                       |
-                       v
-                    ComfyUI
-                       |
-                       v
-                 Generated image
+FastAPI
+  |
+  v
+PostgreSQL
+  |
+  v
+Worker
+  |
+  v
+ComfyUI
+  |
+  v
+Generated Image
 ```
 
-Worker атомарно выбирает ожидающую задачу и переводит её в `processing`. PostgreSQL позволяет нескольким экземплярам Worker конкурировать за задания, пропуская строки, уже заблокированные другой транзакцией.
+Несколько экземпляров Worker могут получать задания из общей очереди. `SKIP LOCKED` позволяет не блокировать обработку задач, уже захваченных другим Worker.
 
-## Стек
+## Технологический стек
 
-| Область | Технологии |
-|---|---|
-| API | Python 3.12, FastAPI, Pydantic |
-| Database | PostgreSQL 16, SQLAlchemy 2, psycopg 3 |
-| Migrations | Alembic |
-| Worker | Python, SQLAlchemy, httpx |
-| Runtime | Docker, Docker Compose |
-| Quality | Pytest, Ruff, GitHub Actions |
+- Python 3.12
+- FastAPI
+- Pydantic
+- SQLAlchemy 2.0
+- PostgreSQL 16
+- Alembic
+- Docker / Docker Compose
+- Pytest
+- Ruff
+- GitHub Actions
 
 ## API
 
-| Метод | Endpoint | Назначение |
+| Method | Endpoint | Description |
 |---|---|---|
-| `POST` | `/generate` | Создать задачу |
-| `GET` | `/jobs/{id}` | Получить статус и детали |
-| `GET` | `/jobs/{id}/result` | Получить имя файла результата |
-| `GET` | `/files/{filename}` | Скачать изображение |
-| `GET` | `/health` | Проверить доступность API |
+| POST | `/generate` | Создание задачи |
+| GET | `/jobs/{id}` | Получение статуса |
+| GET | `/jobs/{id}/result` | Получение результата |
+| GET | `/files/{filename}` | Скачивание изображения |
+| GET | `/health` | Проверка состояния API |
 
-Swagger UI после запуска: [http://localhost:8000/docs](http://localhost:8000/docs).
+Swagger: `http://localhost:8000/docs`
 
-## Быстрый старт
+## Запуск
 
-Требуются Docker Compose, NVIDIA GPU и NVIDIA Container Toolkit для запуска ComfyUI с GPU.
+Требуются Docker Compose, поддерживаемая NVIDIA GPU и NVIDIA Container Toolkit.
 
 ```bash
 git clone https://github.com/Bogdan-95/content-factory-console.git
 cd content-factory-console
+
 cp .env.example .env
 ```
 
-Перед запуском замени значения секретов в `.env`:
-
-- `POSTGRES_PASSWORD` — пароль PostgreSQL;
-- `API_KEY` — случайный ключ API.
-
-Сгенерировать API-ключ можно командой:
-
-```bash
-openssl rand -hex 32
-```
+Укажи необходимые параметры окружения, включая `POSTGRES_PASSWORD` и `API_KEY`.
 
 Запуск:
 
@@ -87,63 +82,43 @@ openssl rand -hex 32
 docker compose up --build
 ```
 
-Первый запуск может занять время: сервис ComfyUI загружает модель Stable Diffusion XL. API будет доступен на порту `8000`.
-
-Пример создания задания:
-
-```bash
-curl -X POST http://localhost:8000/generate \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: $API_KEY" \
-  -d '{"prompt":"a mountain landscape at sunrise","steps":20}'
-```
-
-Проверить статус:
-
-```bash
-curl -H "X-API-Key: $API_KEY" http://localhost:8000/jobs/1
-```
+После первоначальной загрузки модели API будет доступен на порту `8000`.
 
 ## Тестирование
 
-Тесты используют отдельную PostgreSQL-базу с именем `test`. Конфигурация намеренно откажется выполнять миграции, если URL указывает на другую базу или не локальный хост.
-
-Создай отдельную тестовую БД и укажи URL:
-
 ```bash
 export TEST_DATABASE_URL=postgresql+psycopg://test:test@localhost:5432/test
+
 pytest tests/ -v
 ```
 
-Тестовая схема создаётся через Alembic migrations. Интеграционные тесты проверяют API и реальный вызов функции захвата задания Worker'а с блокировкой PostgreSQL.
-
-## CI
-
 GitHub Actions выполняет:
 
-1. Ruff lint и форматирование;
-2. миграции и Pytest на отдельном PostgreSQL 16 service;
-3. сборку Docker Compose.
+- Ruff lint и format checks;
+- тестирование с PostgreSQL 16;
+- сборку Docker Compose.
+
+Автоматизированные тесты проверяют API, валидацию запросов, защиту файловых путей и поведение блокировок PostgreSQL. Полный цикл генерации через реальный ComfyUI требует отдельного интеграционного тестирования.
 
 ## Структура
 
 ```text
-api/                 FastAPI application
-worker/              ComfyUI job worker
-migrations_alembic/  PostgreSQL schema migrations
-tests/               API and worker tests
-scripts/             Smoke and setup helpers
-docs/                User, developer and migration guides
+api/
+worker/
+tests/
+migrations_alembic/
+docs/
+scripts/
 docker-compose.yml
+alembic.ini
 ```
 
-## Ограничения и дальнейшая работа
+## Назначение проекта
 
-- Полный цикл генерации требует доступного ComfyUI и совместимой GPU-среды; CI проверяет сборку контейнеров, но не выполняет реальную генерацию на GPU.
-- Тесты Worker должны проверять не только SQL-оператор, но и функции приложения; тест захвата задания делает именно это.
-- Нужны дополнительные тесты восстановления зависших задач, повторных попыток, обработки ошибок ComfyUI и отказов БД.
-- Перед production-развёртыванием следует отдельно проверить rate limiting, хранение и ротацию ключей, сетевые границы, retention результатов и мониторинг.
+Портфолио-проект, демонстрирующий работу с REST API, очередями задач, транзакциями PostgreSQL, конкурентным доступом к данным и контейнеризацией.
 
 ## Автор
 
-Bogdan Rengo · [GitHub](https://github.com/Bogdan-95)
+Bogdan Rengo
+
+GitHub: https://github.com/Bogdan-95
