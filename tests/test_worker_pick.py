@@ -1,43 +1,46 @@
-# интеграционный: SKIP LOCKED
+"""Integration test for the actual worker pickup function and SKIP LOCKED."""
 
 from sqlalchemy import text
 from sqlalchemy.orm import sessionmaker
 
 
-def test_pick_one_skips_locked(client, db_engine, worker_engine):
-    # Создаём задачи через API (с ключом)
-    client.post(
-        "/generate",
-        json={"prompt": "p1"},
-        headers={"X-API-Key": "dev-local-key-change-me"},
-    )
-    client.post(
-        "/generate",
-        json={"prompt": "p2"},
-        headers={"X-API-Key": "dev-local-key-change-me"},
-    )
+def test_pick_one_skips_locked_job(client, db_engine, worker_session):
+    headers = {"X-API-Key": "dev-local-key-change-me"}
+    first = client.post("/generate", json={"prompt": "first"}, headers=headers)
+    second = client.post("/generate", json={"prompt": "second"}, headers=headers)
 
-    TestSession = sessionmaker(bind=worker_engine)
+    assert first.status_code == 202
+    assert second.status_code == 202
 
-    # Первая сессия блокирует первую задачу и НЕ завершает транзакцию
-    s1 = TestSession()
-    locked_id = s1.execute(
-        text("SELECT id FROM jobs WHERE status='queued' LIMIT 1 FOR UPDATE")
-    ).scalar_one()
-    # не делаем commit() – блокировка удерживается
+    test_sessions = sessionmaker(bind=db_engine, autoflush=False, future=True)
+    lock_session = test_sessions()
 
-    # Вторая сессия должна пропустить заблокированную строку
-    s2 = TestSession()
-    picked_id = s2.execute(
-        text("SELECT id FROM jobs WHERE status='queued' LIMIT 1 FOR UPDATE SKIP LOCKED")
-    ).scalar_one()
-    s2.commit()
-    s2.close()
+    try:
+        locked_id = lock_session.execute(
+            text(
+                """
+                SELECT id
+                FROM jobs
+                WHERE status = 'queued'
+                ORDER BY created_at, id
+                LIMIT 1
+                FOR UPDATE
+                """
+            )
+        ).scalar_one()
 
-    # Теперь можно завершить первую транзакцию
-    s1.commit()
-    s1.close()
+        picked = worker_session.pick_one()
 
-    assert picked_id != locked_id, (
-        f"SKIP LOCKED не сработало: заблокированная и взятая задачи совпадают ({picked_id})"
-    )
+        assert picked is not None
+        assert picked["id"] != locked_id
+
+        with db_engine.connect() as connection:
+            picked_status = connection.execute(
+                text("SELECT status FROM jobs WHERE id = :job_id"),
+                {"job_id": picked["id"]},
+            ).scalar_one()
+
+        assert picked_status == "processing"
+    finally:
+        lock_session.rollback()
+        lock_session.close()

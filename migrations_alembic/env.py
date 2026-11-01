@@ -1,13 +1,12 @@
-"""
-Alembic environment configuration for Content Factory Console.
-Читает DATABASE_URL из настроек приложения.
-"""
+"""Alembic environment configuration for Content Factory Console."""
 
+import os
+import sys
 from logging.config import fileConfig
+from pathlib import Path
+
 from alembic import context
 from sqlalchemy import engine_from_config, pool
-import sys
-from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
@@ -21,13 +20,14 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# URL будет переопределён из conftest.py через переменную окружения
-config.set_main_option("sqlalchemy.url", settings.database_url)
+# Test runs must use the explicitly supplied test database URL.
+database_url = os.getenv("TEST_DATABASE_URL") or settings.database_url
+config.set_main_option("sqlalchemy.url", database_url.replace("%", "%%"))
 
 target_metadata = None
 
 
-def run_migrations_offline():
+def run_migrations_offline() -> None:
     url = config.get_main_option("sqlalchemy.url")
     context.configure(
         url=url,
@@ -39,7 +39,7 @@ def run_migrations_offline():
         context.run_migrations()
 
 
-def run_migrations_online():
+def run_migrations_online() -> None:
     connectable = engine_from_config(
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",
@@ -49,3 +49,9 @@ def run_migrations_online():
         context.configure(connection=connection, target_metadata=target_metadata)
         with context.begin_transaction():
             context.run_migrations()
+
+
+if context.is_offline_mode():
+    run_migrations_offline()
+else:
+    run_migrations_online()

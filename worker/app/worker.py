@@ -56,9 +56,9 @@ def pick_one() -> dict | None:
             SELECT id, prompt, negative, width, height, steps, cfg, seed
             FROM jobs
             WHERE status = 'queued'
-            ORDER BY created_at
-            FOR UPDATE SKIP LOCKED
+            ORDER BY created_at, id
             LIMIT 1
+            FOR UPDATE SKIP LOCKED
         """)
             )
             .mappings()

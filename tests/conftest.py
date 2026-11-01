@@ -1,9 +1,13 @@
-# tests/conftest.py – фикстуры: testdb, testclient
+"""Shared, isolated PostgreSQL fixtures for API and worker tests."""
 
 import os
+
 import pytest
+from alembic import command
+from alembic.config import Config
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
+from sqlalchemy.engine import make_url
 from sqlalchemy.orm import sessionmaker
 
 from api.app.main import app
@@ -14,81 +18,69 @@ TEST_DB_URL = os.environ.get(
 )
 
 
-@pytest.fixture(scope="session")
-def db_engine():
-    """Создаёт engine для тестовой БД и накатывает схему."""
-    e = create_engine(TEST_DB_URL, future=True)
+def _validate_test_database(url: str) -> None:
+    parsed = make_url(url)
+    allowed_hosts = {"localhost", "127.0.0.1", "::1", "postgres"}
 
-    # Удаляем старые таблицы, если есть
-    with e.begin() as conn:
-        conn.execute(text("DROP TABLE IF EXISTS job_results, jobs CASCADE"))
-        conn.execute(text("DROP TYPE IF EXISTS job_status CASCADE"))
-
-    # Создаём схему напрямую (копия из 66a1a1ca5e9d_initial.py)
-    with e.begin() as conn:
-        conn.execute(
-            text("""
-            CREATE TYPE job_status AS ENUM ('queued', 'processing', 'done', 'failed');
-
-            CREATE TABLE jobs (
-                id            BIGSERIAL PRIMARY KEY,
-                prompt        TEXT        NOT NULL,
-                negative      TEXT        NOT NULL DEFAULT '',
-                width         INT         NOT NULL DEFAULT 1024,
-                height        INT         NOT NULL DEFAULT 1024,
-                steps         INT         NOT NULL DEFAULT 20,
-                cfg           REAL        NOT NULL DEFAULT 7.0,
-                seed          BIGINT      NOT NULL DEFAULT -1,
-                status        job_status  NOT NULL DEFAULT 'queued',
-                error         TEXT,
-                comfy_prompt_id TEXT,
-                created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
-                started_at    TIMESTAMPTZ,
-                finished_at   TIMESTAMPTZ
-            );
-
-            CREATE INDEX idx_jobs_status_created ON jobs (status, created_at);
-
-            CREATE TABLE job_results (
-                job_id     BIGINT PRIMARY KEY REFERENCES jobs (id) ON DELETE CASCADE,
-                filename   TEXT     NOT NULL,
-                created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-            );
-        """)
+    if parsed.database != "test":
+        raise RuntimeError(
+            "Refusing to reset database: TEST_DATABASE_URL must target a database named 'test'."
+        )
+    if parsed.host not in allowed_hosts:
+        raise RuntimeError(
+            "Refusing to reset database: TEST_DATABASE_URL must point to a local test host."
         )
 
-    yield e
 
-    # Очистка после всех тестов
-    with e.begin() as conn:
-        conn.execute(text("DROP TABLE IF EXISTS job_results, jobs CASCADE"))
-        conn.execute(text("DROP TYPE IF EXISTS job_status CASCADE"))
-    e.dispose()
+@pytest.fixture(scope="session")
+def db_engine():
+    """Create the isolated test schema using the project's Alembic migrations."""
+    _validate_test_database(TEST_DB_URL)
+    engine = create_engine(TEST_DB_URL, future=True)
+
+    config = Config("alembic.ini")
+    command.upgrade(config, "head")
+
+    yield engine
+    engine.dispose()
+
+
+@pytest.fixture(autouse=True)
+def clean_database(db_engine):
+    """Keep tests independent without dropping the migration-managed schema."""
+    with db_engine.begin() as connection:
+        connection.execute(
+            text("TRUNCATE TABLE job_results, jobs RESTART IDENTITY CASCADE")
+        )
 
 
 @pytest.fixture
 def client(db_engine, monkeypatch):
-    """Создаёт TestClient, полностью переключая API на тестовую БД."""
+    """Route API database access to the guarded test database."""
     import api.app.db as api_db
 
-    monkeypatch.setattr(api_db, "engine", db_engine)
-
-    TestSessionLocal = sessionmaker(
-        bind=db_engine, autoflush=False, autocommit=False, future=True
+    test_sessions = sessionmaker(
+        bind=db_engine,
+        autoflush=False,
+        autocommit=False,
+        future=True,
     )
-    monkeypatch.setattr(api_db, "SessionLocal", TestSessionLocal)
+    monkeypatch.setattr(api_db, "engine", db_engine)
+    monkeypatch.setattr(api_db, "SessionLocal", test_sessions)
 
     return TestClient(app)
 
 
 @pytest.fixture
-def worker_engine(db_engine, monkeypatch):
-    """Подменяет движок и сессии Worker на тестовые."""
-    import worker.app.db as worker_db
+def worker_session(db_engine, monkeypatch):
+    """Patch the SessionLocal reference used by the worker module."""
+    import worker.app.worker as worker
 
-    monkeypatch.setattr(worker_db, "engine", db_engine)
-    TestSessionLocal = sessionmaker(
-        bind=db_engine, autoflush=False, autocommit=False, future=True
+    test_sessions = sessionmaker(
+        bind=db_engine,
+        autoflush=False,
+        autocommit=False,
+        future=True,
     )
-    monkeypatch.setattr(worker_db, "SessionLocal", TestSessionLocal)
-    return db_engine
+    monkeypatch.setattr(worker, "SessionLocal", test_sessions)
+    return worker
