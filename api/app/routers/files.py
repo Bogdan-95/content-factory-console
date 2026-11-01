@@ -1,9 +1,10 @@
 from pathlib import Path
-from fastapi import APIRouter, HTTPException, Depends
+
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
 
-from ..settings import settings
 from ..security import require_api_key
+from ..settings import settings
 
 router = APIRouter(tags=["files"], dependencies=[Depends(require_api_key)])
 
@@ -13,14 +14,7 @@ _ROOT = Path(settings.comfy_output_dir).resolve()
 
 @router.get("/files/{filename}")
 def get_file(filename: str):
-    """
-    Отдать файл изображения по имени.
-
-    Клиент получает имя файла из GET /jobs/{id}/result → поле filename,
-    затем запрашивает GET /files/{filename} — и получает PNG.
-    """
-    # Защита от path traversal: запрещаем сепараторы и '..' в имени.
-
+    """Отдать файл изображения по имени."""
     if (
         "/" in filename
         or "\\" in filename

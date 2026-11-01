@@ -1,7 +1,7 @@
 # SQLAlchemy engine + session
 
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy.orm import Session, sessionmaker
 
 from .settings import settings
 
@@ -18,9 +18,8 @@ engine = create_engine(
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
 
 
-# get_session — Dependency для FastAPI
 def get_session() -> Session:
-    """FastApi dependency: выдает Session и закрывает её после запроса"""
+    """FastAPI dependency: выдаёт Session и закрывает её после запроса."""
     db = SessionLocal()
     try:
         yield db

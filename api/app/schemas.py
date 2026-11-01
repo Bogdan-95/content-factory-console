@@ -1,12 +1,13 @@
 # Pydantic: вход/выход API
 
 from datetime import datetime
-from typing import Literal, Optional
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 
 class GenerateIn(BaseModel):
-    """Схема запроса"""
+    """Схема запроса."""
 
     prompt: str = Field(..., min_length=1, max_length=2000)
     negative: str = Field("", max_length=2000)
@@ -18,25 +19,25 @@ class GenerateIn(BaseModel):
 
 
 class GenerateOut(BaseModel):
-    """Схема ответа на POST"""
+    """Схема ответа на POST."""
 
     job_id: int
     status: Literal["queued"]
 
 
 class JobOut(BaseModel):
-    """Схема ответа на GET"""
+    """Схема ответа на GET."""
 
     id: int
     status: Literal["queued", "processing", "done", "failed"]
     created_at: datetime
-    started_at: Optional[datetime] = None
-    finished_at: Optional[datetime] = None
-    error: Optional[str] = None
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+    error: str | None = None
 
 
 class JobResultOut(BaseModel):
-    """Схема ответа на GET /jobs/:job_id/result"""
+    """Схема ответа на GET /jobs/:job_id/result."""
 
     job_id: int
     filename: str

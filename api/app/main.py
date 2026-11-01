@@ -6,12 +6,12 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from slowapi.errors import RateLimitExceeded
 from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 
-from .settings import settings
+from .routers import files, generate, health, jobs
 from .security import limiter
-from .routers import health, generate, jobs, files
+from .settings import settings
 
 log = logging.getLogger("api")
 
@@ -42,8 +42,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Роутеры
-app.include_router(health.router)  # GET /health
-app.include_router(generate.router)  # POST /generate
-app.include_router(jobs.router)  # GET /jobs/{id}, /jobs/{id}/result
-app.include_router(files.router)  # GET /files/{name}
+app.include_router(health.router)
+app.include_router(generate.router)
+app.include_router(jobs.router)
+app.include_router(files.router)

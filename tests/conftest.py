@@ -16,14 +16,12 @@ TEST_DB_URL = os.environ.get(
     "TEST_DATABASE_URL",
     "postgresql+psycopg://test:test@localhost:5432/test",
 )
-# Ensure Pydantic settings and Alembic use the same explicitly isolated DB.
 os.environ.setdefault("DATABASE_URL", TEST_DB_URL)
 
 
 def _validate_test_database(url: str) -> None:
     parsed = make_url(url)
     allowed_hosts = {"localhost", "127.0.0.1", "::1", "postgres"}
-
     if parsed.database != "test":
         raise RuntimeError(
             "Refusing to reset database: TEST_DATABASE_URL must target a database named 'test'."
@@ -39,10 +37,7 @@ def db_engine():
     """Create the isolated test schema using the project's Alembic migrations."""
     _validate_test_database(TEST_DB_URL)
     engine = create_engine(TEST_DB_URL, future=True)
-
-    config = Config("alembic.ini")
-    command.upgrade(config, "head")
-
+    command.upgrade(Config("alembic.ini"), "head")
     yield engine
     engine.dispose()
 
@@ -69,14 +64,13 @@ def client(db_engine, monkeypatch):
     )
     monkeypatch.setattr(api_db, "engine", db_engine)
     monkeypatch.setattr(api_db, "SessionLocal", test_sessions)
-
     return TestClient(app)
 
 
 @pytest.fixture
 def worker_session(db_engine, monkeypatch):
     """Patch the SessionLocal reference used by the worker module."""
-    import worker.app.worker as worker
+    from worker.app import worker
 
     test_sessions = sessionmaker(
         bind=db_engine,
