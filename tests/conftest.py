@@ -16,6 +16,8 @@ TEST_DB_URL = os.environ.get(
     "TEST_DATABASE_URL",
     "postgresql+psycopg://test:test@localhost:5432/test",
 )
+# Ensure Pydantic settings and Alembic use the same explicitly isolated DB.
+os.environ.setdefault("DATABASE_URL", TEST_DB_URL)
 
 
 def _validate_test_database(url: str) -> None:
