@@ -64,9 +64,7 @@ def pick_one() -> dict | None:
 
         job = dict(row)
         db.execute(
-            text(
-                "UPDATE jobs SET status='processing', started_at=:now WHERE id=:id"
-            ),
+            text("UPDATE jobs SET status='processing', started_at=:now WHERE id=:id"),
             {"id": job["id"], "now": datetime.now(UTC)},
         )
         db.commit()

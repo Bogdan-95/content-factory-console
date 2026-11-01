@@ -18,6 +18,4 @@ def test_rejects_non_test_or_remote_database(url):
 
 
 def test_accepts_local_test_database():
-    _validate_test_database(
-        "postgresql+psycopg://test:test@127.0.0.1:5432/test"
-    )
+    _validate_test_database("postgresql+psycopg://test:test@127.0.0.1:5432/test")
