@@ -38,3 +38,25 @@ def test_generate_validation(client):
     assert r.status_code == 422, f"Expected 422, got {r.status_code}"
     detail = r.json().get("detail")
     assert detail is not None, "Validation error should contain 'detail'"
+
+
+def test_generate_rejects_seed_above_postgresql_bigint_max(client):
+    """Seed outside PostgreSQL BIGINT range is rejected before database access."""
+    response = client.post(
+        "/generate",
+        json={"prompt": "a cat", "seed": 2**63},
+        headers={"X-API-Key": "dev-local-key-change-me"},
+    )
+
+    assert response.status_code == 422
+
+
+def test_generate_accepts_postgresql_bigint_max_seed(client):
+    """The largest signed PostgreSQL BIGINT seed remains valid."""
+    response = client.post(
+        "/generate",
+        json={"prompt": "a cat", "seed": 2**63 - 1},
+        headers={"X-API-Key": "dev-local-key-change-me"},
+    )
+
+    assert response.status_code == 202

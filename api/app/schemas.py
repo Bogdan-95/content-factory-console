@@ -15,7 +15,7 @@ class GenerateIn(BaseModel):
     height: int = Field(1024, ge=256, le=2048)
     steps: int = Field(20, ge=1, le=80)
     cfg: float = Field(7.0, ge=0, le=30)
-    seed: int = Field(-1, ge=-1)
+    seed: int = Field(-1, ge=-1, le=2**63 - 1)
 
 
 class GenerateOut(BaseModel):
