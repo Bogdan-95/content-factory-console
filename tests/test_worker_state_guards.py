@@ -19,10 +19,7 @@ def _job_state(db_engine, job_id: int) -> dict:
     with db_engine.connect() as connection:
         return dict(
             connection.execute(
-                text(
-                    "SELECT status, comfy_prompt_id, error "
-                    "FROM jobs WHERE id = :id"
-                ),
+                text("SELECT status, comfy_prompt_id, error FROM jobs WHERE id = :id"),
                 {"id": job_id},
             )
             .mappings()
