@@ -71,33 +71,72 @@ def pick_one() -> dict | None:
         return job
 
 
+def save_prompt_id(job_id: int, prompt_id: str) -> bool:
+    """Сохранить ComfyUI prompt_id только для активной задачи."""
+    with SessionLocal() as db:
+        result = db.execute(
+            text(
+                "UPDATE jobs SET comfy_prompt_id = :pid "
+                "WHERE id = :id AND status = 'processing'"
+            ),
+            {"id": job_id, "pid": prompt_id},
+        )
+        if result.rowcount == 0:
+            db.rollback()
+            log.warning(
+                "job %s prompt_id was not saved because it is no longer processing",
+                job_id,
+            )
+            return False
+        db.commit()
+        return True
+
+
 def mark_done(job_id: int, prompt_id: str, filename: str) -> None:
     """Сохранить результат и атомарно перевести задачу в done."""
     with SessionLocal() as db:
-        db.execute(
-            text("INSERT INTO job_results (job_id, filename) VALUES (:id, :f)"),
-            {"id": job_id, "f": filename},
-        )
-        db.execute(
+        result = db.execute(
             text(
                 "UPDATE jobs SET status='done', comfy_prompt_id=:pid, "
-                "finished_at=:now WHERE id=:id"
+                "finished_at=:now WHERE id=:id AND status='processing'"
             ),
             {"id": job_id, "pid": prompt_id, "now": datetime.now(UTC)},
+        )
+        if result.rowcount == 0:
+            db.rollback()
+            log.warning(
+                "job %s was not marked done because it is no longer processing",
+                job_id,
+            )
+            return
+
+        db.execute(
+            text(
+                "INSERT INTO job_results (job_id, filename) "
+                "VALUES (:id, :f) ON CONFLICT (job_id) DO NOTHING"
+            ),
+            {"id": job_id, "f": filename},
         )
         db.commit()
 
 
 def mark_failed(job_id: int, err: str) -> None:
-    """Пометить задачу как failed и сохранить ограниченное сообщение об ошибке."""
+    """Пометить активную задачу как failed и сохранить ограниченное сообщение об ошибке."""
     with SessionLocal() as db:
-        db.execute(
+        result = db.execute(
             text(
                 "UPDATE jobs SET status='failed', error=:e, "
-                "finished_at=:now WHERE id=:id"
+                "finished_at=:now WHERE id=:id AND status='processing'"
             ),
             {"id": job_id, "e": err[:2000], "now": datetime.now(UTC)},
         )
+        if result.rowcount == 0:
+            db.rollback()
+            log.warning(
+                "job %s was not marked failed because it is no longer processing",
+                job_id,
+            )
+            return
         db.commit()
 
 
@@ -105,6 +144,8 @@ def process(job: dict) -> None:
     """Отправить workflow в ComfyUI и дождаться появления файла результата."""
     workflow = _apply_params(_load_template(), job)
     prompt_id = submit_prompt(workflow)
+    if not save_prompt_id(job["id"], prompt_id):
+        return
     log.info("job %s submitted to ComfyUI as %s", job["id"], prompt_id)
 
     deadline = time.time() + settings.worker_comfy_timeout_sec

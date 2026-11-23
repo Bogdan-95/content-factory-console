@@ -10,13 +10,13 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import sessionmaker
 
-from api.app.main import app
-
 TEST_DB_URL = os.environ.get(
     "TEST_DATABASE_URL",
     "postgresql+psycopg://test:test@localhost:5432/test",
 )
 os.environ.setdefault("DATABASE_URL", TEST_DB_URL)
+
+from api.app.main import app
 
 
 def _validate_test_database(url: str) -> None:
