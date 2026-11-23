@@ -16,7 +16,7 @@ TEST_DB_URL = os.environ.get(
 )
 os.environ.setdefault("DATABASE_URL", TEST_DB_URL)
 
-from api.app.main import app  # noqa: E402
+from api.app.main import app
 
 
 def _validate_test_database(url: str) -> None:

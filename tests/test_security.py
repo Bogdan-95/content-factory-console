@@ -2,7 +2,7 @@
 
 import pytest
 
-import api.app.security as security
+from api.app import security
 
 
 @pytest.mark.parametrize("header_value", ["incorrect-key", ""])
